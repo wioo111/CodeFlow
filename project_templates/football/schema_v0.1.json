@@ -1,0 +1,20 @@
+{
+  "version": "football_v0.1",
+  "fields": [
+    {"id": "literal_content", "label": "客观内容", "description": "仅描述材料中明确出现的内容。", "type": "long_text", "required": true},
+    {"id": "communicative_type", "label": "传播点类型", "type": "single_select", "required": true, "options": [
+      {"value": "P1", "label": "竞技结果与关键高光"},
+      {"value": "P2", "label": "技术过程与运动美感"},
+      {"value": "P3", "label": "异常失误与幽默反差"},
+      {"value": "P4", "label": "情感表达与群体认同"}
+    ]},
+    {"id": "secondary_features", "label": "次要特征", "type": "multi_select", "required": false, "options": [
+      {"value": "emotion", "label": "情绪感染"}, {"value": "skill", "label": "技术展示"},
+      {"value": "story", "label": "叙事性"}, {"value": "humor", "label": "幽默反差"}
+    ]},
+    {"id": "has_clear_climax", "label": "是否有明确高潮", "type": "boolean", "required": true},
+    {"id": "confidence", "label": "判断信心", "description": "1 表示不确定，5 表示非常确定。", "type": "scale", "required": true, "min": 1, "max": 5},
+    {"id": "notes", "label": "补充说明", "type": "short_text", "required": false}
+  ]
+}
+
