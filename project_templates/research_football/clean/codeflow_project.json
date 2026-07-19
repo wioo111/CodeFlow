@@ -1,0 +1,31 @@
+{
+  "protocol_version": "1.0",
+  "project_id": "football_cp_pilot",
+  "name": "足球短视频传播点 Pilot",
+  "description": "CodeFlow 标准多表演示数据包",
+  "dataset_version": "2026.07-demo",
+  "primary_table": "samples",
+  "primary_key": "sample_id",
+  "annotation_schema": "schemas/annotation_schema.json",
+  "view": "view.json",
+  "codebook": "codebook.json",
+  "versions": {
+    "sample_schema_version": "1.0",
+    "annotation_schema_version": "1.1",
+    "view_version": "1.0",
+    "codebook_version": "0.1",
+    "prompt_version": "demo-p1",
+    "frame_set_version": "demo-f1"
+  },
+  "workflow": {
+    "default_stage": "pilot_independent_review",
+    "default_coders": ["local_reviewer", "coder_02"],
+    "default_evidence": {"video": true, "frames": true, "title": true, "comments": true, "metadata": true, "ai_suggestion": true}
+  },
+  "tables": [
+    {"name": "samples", "file": "samples.jsonl", "schema": "schemas/sample_schema.json", "primary_key": "sample_id"},
+    {"name": "comments", "file": "comments.jsonl", "schema": "schemas/comment_schema.json", "primary_key": "comment_id", "foreign_key": "sample_id", "relation": "one_to_many"},
+    {"name": "frames", "file": "frames.jsonl", "schema": "schemas/frame_schema.json", "primary_key": "frame_id", "foreign_key": "sample_id", "relation": "one_to_many"},
+    {"name": "assets", "file": "assets.jsonl", "schema": "schemas/asset_schema.json", "primary_key": "asset_id", "foreign_key": "sample_id", "relation": "one_to_many"}
+  ]
+}

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import Base, engine
-from backend.routers import exports, imports, projects, records, validation
+from backend.routers import dataset_packages, exports, imports, projects, records, research, validation, workflow
 
 
 @asynccontextmanager
@@ -30,4 +30,6 @@ app.include_router(imports.router, prefix="/api")
 app.include_router(records.router, prefix="/api")
 app.include_router(validation.router, prefix="/api")
 app.include_router(exports.router, prefix="/api")
-
+app.include_router(dataset_packages.router, prefix="/api")
+app.include_router(research.router, prefix="/api")
+app.include_router(workflow.router, prefix="/api")

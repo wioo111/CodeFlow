@@ -33,6 +33,7 @@
     "eslint-plugin-react-refresh": "latest",
     "globals": "latest",
     "jsdom": "latest",
+    "playwright-core": "1.61.1",
     "typescript-eslint": "latest",
     "vitest": "latest"
   }

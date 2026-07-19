@@ -1,0 +1,1 @@
+{"type":"object","required":["asset_id","sample_id","asset_type"],"properties":{"asset_id":{"type":"string"},"sample_id":{"type":"string"},"asset_type":{"type":"string"},"video_path":{"type":["string","null"]},"path":{"type":["string","null"]},"duration_seconds":{"type":["number","null"]}}}

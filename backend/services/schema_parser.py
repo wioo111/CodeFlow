@@ -3,7 +3,11 @@ from typing import Any
 from fastapi import HTTPException
 
 
-SUPPORTED_TYPES = {"string", "long_text", "number", "boolean", "enum", "multi_enum", "string_array", "object", "object_array"}
+SUPPORTED_TYPES = {
+    "string", "long_text", "number", "integer", "boolean", "enum", "multi_enum",
+    "string_array", "object", "object_array", "time_point", "time_span",
+    "asset_reference", "record_reference", "computed_readonly",
+}
 
 
 def child_fields(field: dict[str, Any]) -> list[dict[str, Any]]:

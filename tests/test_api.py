@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -138,3 +139,185 @@ def test_duplicate_primary_keys_are_rejected(client: TestClient):
     response = client.post("/api/imports", data={"project_name": "重复数据"}, files=files)
     assert response.status_code == 422
     assert "主键重复" in response.json()["detail"]
+
+
+def research_package(name: str, replacements: dict[str, bytes] | None = None) -> bytes:
+    directory = ROOT / "project_templates" / name / "clean"
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in directory.rglob("*"):
+            if path.is_file():
+                arcname = f"clean/{path.relative_to(directory).as_posix()}"
+                archive.writestr(arcname, (replacements or {}).get(arcname, path.read_bytes()))
+    return output.getvalue()
+
+
+@pytest.fixture(scope="module")
+def research_import(client: TestClient):
+    content = research_package("research_football")
+    files = {"package_file": ("football.zip", content, "application/zip")}
+    media_root = str(ROOT / "project_templates" / "research_football" / "media")
+    preflight = client.post("/api/dataset-packages/preflight", data={"media_root": media_root}, files=files)
+    assert preflight.status_code == 200, preflight.text
+    assert preflight.json()["valid"] and preflight.json()["tables"] == {"samples": 2, "comments": 3, "frames": 3, "assets": 3}
+    result = client.post("/api/dataset-packages/import", data={"media_root": media_root}, files=files)
+    assert result.status_code == 201, result.text
+    duplicate = client.post("/api/dataset-packages/import", data={"media_root": media_root}, files=files)
+    assert duplicate.status_code == 200 and duplicate.json()["status"] == "already_exists"
+    return result.json()
+
+
+def test_research_package_import_is_multitable_versioned_and_idempotent(client: TestClient, research_import):
+    project_id = research_import["project_id"]
+    versions = client.get(f"/api/projects/{project_id}/dataset-versions").json()
+    assert len(versions) == 1
+    assert versions[0]["dataset_version"] == "2026.07-demo"
+    queue = client.get(f"/api/projects/{project_id}/samples").json()
+    assert queue["total"] == 2 and queue["items"][0]["sample_id"] == "V001"
+    assert all(item["coder_id"] == "local_reviewer" for item in queue["items"])
+
+
+@pytest.mark.parametrize("replacement, expected", [
+    ({"clean/comments.jsonl": b'{"comment_id":"C1","sample_id":"MISSING","text":"x"}\n'}, "外键无法关联主表"),
+    ({"clean/samples.jsonl": b'{"sample_id":"V001","duration_seconds":8}\n{"sample_id":"V001","duration_seconds":8}\n'}, "主键重复"),
+    ({"clean/assets.jsonl": b'{"asset_id":"A1","sample_id":"V001","asset_type":"video","video_path":"../secret.mp4"}\n'}, "媒体路径越界"),
+    ({"clean/samples.jsonl": b'{"sample_id":"V001","duration_seconds":"eight"}\n'}, "Schema 校验失败"),
+])
+def test_package_preflight_rejects_integrity_and_path_errors(client: TestClient, replacement, expected):
+    response = client.post("/api/dataset-packages/preflight", files={
+        "package_file": ("broken.zip", research_package("research_football", replacement), "application/zip")
+    })
+    assert response.status_code == 200
+    report = response.json()
+    assert not report["valid"] and expected in json.dumps(report["errors"], ensure_ascii=False)
+
+
+def test_zip_path_traversal_is_rejected_before_preflight(client: TestClient):
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("../codeflow_project.json", "{}")
+    response = client.post("/api/dataset-packages/preflight", files={"package_file": ("unsafe.zip", output.getvalue(), "application/zip")})
+    assert response.status_code == 422 and "不安全路径" in response.json()["detail"]
+
+
+def test_missing_declared_file_fails_without_partial_import(client: TestClient):
+    manifest = json.loads((ROOT / "project_templates/research_inventory/clean/codeflow_project.json").read_text(encoding="utf-8"))
+    manifest["project_id"] = "broken_missing_file"
+    manifest["tables"][1]["file"] = "missing.jsonl"
+    replacement = {"clean/codeflow_project.json": json.dumps(manifest, ensure_ascii=False).encode()}
+    package = research_package("research_inventory", replacement)
+    preflight = client.post("/api/dataset-packages/preflight", files={"package_file": ("broken.zip", package, "application/zip")}).json()
+    assert not preflight["valid"]
+    imported = client.post("/api/dataset-packages/import", files={"package_file": ("broken.zip", package, "application/zip")})
+    assert imported.status_code == 422
+    assert not any(project["schema_id"] == "broken_missing_file" for project in client.get("/api/projects").json())
+
+
+def test_video_range_frames_comments_and_server_side_visibility(client: TestClient, research_import):
+    project_id = research_import["project_id"]
+    item = client.get(f"/api/projects/{project_id}/samples").json()["items"][0]
+    assignment_id, sample_record_id = item["assignment_id"], item["sample_record_id"]
+    comments = client.get(f"/api/samples/{sample_record_id}/comments?assignment_id={assignment_id}").json()
+    frames = client.get(f"/api/samples/{sample_record_id}/frames?assignment_id={assignment_id}").json()
+    assert [row["rank_by_like"] for row in comments] == [1, 2]
+    assert [row["time_seconds"] for row in frames] == [1.0, 4.2]
+    video = client.get(f"/api/samples/{sample_record_id}/media/video?assignment_id={assignment_id}", headers={"Range": "bytes=0-99"})
+    assert video.status_code == 206 and len(video.content) == 100 and video.headers["accept-ranges"] == "bytes"
+    other = client.get(f"/api/assignments/{assignment_id}", headers={"X-User-ID": "coder_02"})
+    assert other.status_code == 403
+
+
+def test_ai_raw_human_draft_span_validation_submit_lock_and_isolation(client: TestClient, research_import):
+    project_id = research_import["project_id"]
+    local_item = client.get(f"/api/projects/{project_id}/samples").json()["items"][0]
+    sample_id, assignment_id = local_item["sample_id"], local_item["assignment_id"]
+    model = client.post("/api/model-runs/import", json={
+        "project_id": project_id, "name": "demo", "model_version": "m1", "prompt_version": "p1",
+        "annotations": [{"sample_id": sample_id, "annotation": {"literal_content": "AI 原始事实", "final_type": "controversy"}}],
+    })
+    assert model.status_code == 201
+    detail = client.get(f"/api/assignments/{assignment_id}").json()
+    assert detail["ai_raw_annotation"]["immutable"] is True
+    payload = {"annotation": {"literal_content": "人工事实", "key_detail": "接触瞬间", "communicative_point": "判罚争议", "final_type": "controversy", "annotation_confidence": 0.9},
+               "field_decisions": {"literal_content": "minor_edit", "key_detail": "supplement", "final_type": "accept"},
+               "evidence_spans": [{"start": 1.2, "end": 3.4, "primary": True}], "active_seconds": 12.5}
+    draft = client.patch(f"/api/assignments/{assignment_id}/draft", json=payload)
+    assert draft.status_code == 200 and not draft.json()["validation_errors"]
+    bad = {**payload, "evidence_spans": [{"start": 2, "end": 9, "primary": True}]}
+    rejected = client.post(f"/api/assignments/{assignment_id}/submit", json=bad)
+    assert rejected.status_code == 422
+    submitted = client.post(f"/api/assignments/{assignment_id}/submit", json=payload)
+    assert submitted.status_code == 200 and submitted.json()["locked"]
+    assert client.post(f"/api/assignments/{assignment_id}/submit", json=payload).json()["idempotent"]
+    assert client.patch(f"/api/assignments/{assignment_id}/draft", json=payload).status_code == 409
+    locked = client.get(f"/api/assignments/{assignment_id}").json()
+    assert locked["ai_raw_annotation"]["raw_output"]["literal_content"] == "AI 原始事实"
+    assert locked["human_annotation"]["submitted_data"]["literal_content"] == "人工事实"
+    assert any(log["field_path"] == "evidence_spans" for log in locked["change_logs"])
+
+
+def test_blind_nonfootball_package_uses_same_kernel_and_hides_evidence_by_api(client: TestClient):
+    content = research_package("research_inventory")
+    response = client.post("/api/dataset-packages/import", files={"package_file": ("inventory.zip", content, "application/zip")})
+    assert response.status_code == 201
+    project_id = response.json()["project_id"]
+    item = client.get(f"/api/projects/{project_id}/samples").json()["items"][0]
+    assert "title" not in item["sample"]
+    assert client.get(f"/api/samples/{item['sample_record_id']}/comments?assignment_id={item['assignment_id']}").status_code == 403
+    detail = client.get(f"/api/assignments/{item['assignment_id']}").json()
+    assert detail["blind"] and detail["ai_raw_annotation"] is None
+    assert detail["annotation_schema"]["schema_id"] == "warehouse_annotation"
+
+
+def test_two_coders_adjudication_gold_and_research_export(client: TestClient, research_import):
+    project_id = research_import["project_id"]
+    coder_headers = {"X-User-ID": "coder_02", "X-User-Role": "coder"}
+    item = client.get(f"/api/projects/{project_id}/samples", headers=coder_headers).json()["items"][0]
+    payload = {"annotation": {"literal_content": "第二人事实", "key_detail": "接触", "communicative_point": "存在争议", "final_type": "controversy"},
+               "field_decisions": {"literal_content": "major_edit"}, "evidence_spans": [{"start": 1.0, "end": 3.0, "primary": True}]}
+    assert client.post(f"/api/assignments/{item['assignment_id']}/submit", json=payload, headers=coder_headers).status_code == 200
+    manager = {"X-User-ID": "manager", "X-User-Role": "research_manager"}
+    prepared = client.post(f"/api/projects/{project_id}/adjudications/prepare", headers=manager)
+    assert prepared.status_code == 201 and prepared.json()["count"] >= 1
+    adjudication_id = prepared.json()["created"][0]
+    comparison = client.get(f"/api/adjudications/{adjudication_id}", headers=manager).json()
+    assert len(comparison["human_annotations"]) == 2 and comparison["differences"]
+    resolution = {"literal_content": "仲裁事实", "key_detail": "接触瞬间", "communicative_point": "判罚争议", "final_type": "controversy"}
+    assert client.post(f"/api/adjudications/{adjudication_id}/resolve", json={"resolution": resolution, "rationale": "逐字段核对视频"}, headers=manager).status_code == 200
+    frozen = client.post(f"/api/gold/{project_id}/freeze", json={"gold_version": "gold-v1"}, headers=manager)
+    assert frozen.status_code == 201 and frozen.json()["frozen"] >= 1
+    exported = client.post("/api/exports", json={"project_id": project_id, "gold_version": "gold-v1", "anonymize_coders": True})
+    assert exported.status_code == 200 and exported.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        expected = {"ai_raw_annotations.jsonl", "human_annotations_long.jsonl", "human_annotations_wide.jsonl",
+                    "field_decisions.jsonl", "change_logs.jsonl", "adjudications.jsonl", "gold_annotations.jsonl",
+                    "assignments.csv", "agreement_input.csv", "annotation_metrics.json", "export_manifest.json"}
+        assert set(archive.namelist()) == expected
+        manifest = json.loads(archive.read("export_manifest.json"))
+        assert manifest["dataset_version"] == "2026.07-demo" and len(manifest["files"]) == 10
+
+
+def test_new_dataset_version_does_not_overwrite_old_and_manager_can_create_blind_assignment(client: TestClient, research_import):
+    manifest_path = ROOT / "project_templates/research_football/clean/codeflow_project.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["dataset_version"] = "2026.08-demo"
+    replacements = {"clean/codeflow_project.json": json.dumps(manifest, ensure_ascii=False).encode()}
+    package = research_package("research_football", replacements)
+    media_root = str(ROOT / "project_templates/research_football/media")
+    imported = client.post("/api/dataset-packages/import", data={"media_root": media_root}, files={"package_file": ("v2.zip", package, "application/zip")})
+    assert imported.status_code == 201 and imported.json()["dataset_version_id"] != research_import["dataset_version_id"]
+    versions = client.get(f"/api/projects/{research_import['project_id']}/dataset-versions").json()
+    assert {row["dataset_version"] for row in versions} == {"2026.07-demo", "2026.08-demo"}
+    manager = {"X-User-ID": "manager", "X-User-Role": "research_manager"}
+    created = client.post(f"/api/projects/{research_import['project_id']}/assignments", headers=manager, json={
+        "dataset_version_id": imported.json()["dataset_version_id"], "sample_ids": ["V001"],
+        "coder_ids": ["blind_coder"], "stage": "blind_control", "experiment_group": "video-only",
+        "blind": True, "evidence_config": {"video": True, "frames": False, "title": False, "comments": False, "metadata": False, "ai_suggestion": False},
+    })
+    assert created.status_code == 201 and created.json()["count"] == 1
+    assignment_id = created.json()["created"][0]
+    blind_headers = {"X-User-ID": "blind_coder", "X-User-Role": "coder"}
+    detail = client.get(f"/api/assignments/{assignment_id}", headers=blind_headers).json()
+    sample = client.get(f"/api/samples/{detail['sample_record_id']}?assignment_id={assignment_id}", headers=blind_headers).json()
+    assert detail["ai_raw_annotation"] is None and "title" not in sample["data"] and "account" not in sample["data"]
+    assert client.get(f"/api/samples/{detail['sample_record_id']}/comments?assignment_id={assignment_id}", headers=blind_headers).status_code == 403

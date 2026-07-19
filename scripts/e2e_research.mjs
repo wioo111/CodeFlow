@@ -1,0 +1,74 @@
+import { existsSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { chromium } from '../frontend/node_modules/playwright-core/index.mjs'
+
+const repositoryRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
+const base = process.env.CODEFLOW_BASE_URL||'http://127.0.0.1:5173'
+const packagePath = path.join(repositoryRoot,'project_templates','research_football','research_football-demo.zip')
+const mediaRoot = path.join(repositoryRoot,'project_templates','research_football','media')
+const artifactRoot = path.resolve(process.env.CODEFLOW_E2E_ARTIFACT_DIR||path.join(repositoryRoot,'artifacts','e2e'))
+mkdirSync(artifactRoot,{recursive:true})
+const chromeCandidates=[process.env.CODEFLOW_CHROME_PATH,path.join(process.env.ProgramFiles||'C:\\Program Files','Google','Chrome','Application','chrome.exe')].filter(Boolean)
+const chromePath=chromeCandidates.find(candidate=>existsSync(candidate))
+const browser = await chromium.launch({headless:true,...(chromePath?{executablePath:chromePath}:{})})
+const page = await browser.newPage({viewport:{width:1600,height:1000},acceptDownloads:true})
+const consoleErrors=[];const failedRequests=[]
+page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text())})
+page.on('requestfailed',request=>failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText}`))
+
+await page.goto(`${base}/project/import`,{waitUntil:'networkidle'})
+await page.locator('input[type=file]').first().setInputFiles(packagePath)
+await page.getByPlaceholder('例如 D:\\research\\media').fill(mediaRoot)
+await page.getByRole('button',{name:'运行导入预检'}).click()
+await page.getByText('预检报告').waitFor()
+await page.screenshot({path:`${artifactRoot}/codeflow-package-preflight.png`,fullPage:true})
+let projectUrl=''
+const importButton=page.getByRole('button',{name:'确认整体导入'})
+if(await importButton.count()&&await importButton.isEnabled()){
+  await importButton.click()
+  await page.waitForURL(/\/research\/project\//)
+  projectUrl=page.url()
+}else{
+  const projects=await page.request.get(`${base}/api/projects`).then(r=>r.json())
+  const project=projects.find(item=>item.schema_id==='football_cp_pilot')
+  if(!project)throw new Error('Duplicate reported but imported project was not found')
+  const versions=await page.request.get(`${base}/api/projects/${project.id}/dataset-versions`).then(r=>r.json())
+  projectUrl=`${base}/research/project/${project.id}?dataset=${versions[0].id}`
+  await page.goto(projectUrl,{waitUntil:'networkidle'})
+}
+await page.getByText('标注任务队列').waitFor()
+const liveProjectId=Number(new URL(projectUrl).pathname.match(/\/research\/project\/(\d+)/)?.[1])
+const modelResponse=await page.request.post(`${base}/api/model-runs/import`,{data:{project_id:liveProjectId,name:'browser-e2e',model_version:'demo-m1',prompt_version:'demo-p1',annotations:[{sample_id:'V001',annotation:{literal_content:'AI 建议：画面包含争议接触。',key_detail:'建议核对 4 秒附近慢镜头。',communicative_point:'争议与慢镜头形成传播点。',final_type:'controversy'}}]}})
+if(!modelResponse.ok())throw new Error(`AI pre-annotation import failed: ${modelResponse.status()}`)
+await page.screenshot({path:`${artifactRoot}/codeflow-research-queue.png`,fullPage:true})
+await page.getByRole('button',{name:'进入工作台'}).first().click()
+await page.waitForURL(/\/research\/assignment\//)
+await page.locator('video').waitFor()
+await page.waitForFunction(()=>{const video=document.querySelector('video');return video&&video.readyState>=1})
+await page.locator('video').evaluate(async video=>{await video.play();await new Promise(resolve=>setTimeout(resolve,900));video.pause()})
+const playedTime=await page.locator('video').evaluate(video=>video.currentTime)
+if(playedTime<=0)throw new Error('Video did not advance')
+await page.locator('.frame-card').nth(1).click()
+const frameTime=await page.locator('video').evaluate(video=>video.currentTime)
+if(Math.abs(frameTime-4.2)>.25)throw new Error(`Frame seek mismatch: ${frameTime}`)
+while(await page.locator('.span-editor').count())await page.locator('.span-editor').first().getByRole('button',{name:'删除'}).click()
+const fields=page.locator('.dynamic-field')
+await fields.nth(0).locator('textarea').fill('浏览器验收：画面展示一次可验证的争议接触。')
+await fields.nth(1).locator('textarea').fill('接触瞬间位于 4.2 秒附近。')
+await fields.nth(2).locator('textarea').fill('慢镜头与关键瞬间共同构成传播点。')
+await fields.nth(3).locator('.ant-select').click()
+await page.getByText('争议',{exact:true}).last().click()
+await page.getByRole('button',{name:'添加候选区间'}).click()
+await page.getByRole('button',{name:'保存草稿'}).click()
+await page.getByText('草稿已保存').waitFor()
+await page.screenshot({path:`${artifactRoot}/codeflow-research-workbench.png`,fullPage:true})
+await page.reload({waitUntil:'networkidle'})
+await page.locator('.dynamic-field textarea').first().waitFor()
+if(await page.locator('.dynamic-field textarea').first().inputValue()!=='浏览器验收：画面展示一次可验证的争议接触。')throw new Error('Saved annotation was not restored after reload')
+const restoredSpans=await page.locator('.span-editor').count()
+if(restoredSpans<1)throw new Error('Saved evidence span was not restored after reload')
+await page.screenshot({path:`${artifactRoot}/codeflow-research-restored.png`,fullPage:true})
+
+console.log(JSON.stringify({projectUrl,playedTime,frameTime,restoredSpans,consoleErrors,failedRequests},null,2))
+await browser.close()

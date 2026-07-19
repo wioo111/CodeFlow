@@ -5,9 +5,12 @@ __pycache__/
 .pytest_cache/
 backend/codeflow.db
 backend/codeflow_review.db
+backend/server.*.log
+artifacts/
 data/
 exports/
 frontend/node_modules/
 frontend/dist/
+.e2e-runtime/
 *.tsbuildinfo
 .DS_Store

@@ -1,0 +1,1 @@
+{"type":"object","required":["frame_id","sample_id","time_seconds","path"],"properties":{"frame_id":{"type":"string"},"sample_id":{"type":"string"},"time_seconds":{"type":"number"},"frame_set":{"type":"string"},"path":{"type":"string"}}}

@@ -32,12 +32,13 @@ def validate_record(schema: dict[str, Any], data: dict[str, Any]) -> list[dict[s
             if _empty(value):
                 continue
             kind = field["type"]
-            if kind in {"string", "long_text"}:
+            if kind in {"string", "long_text", "asset_reference", "record_reference", "computed_readonly"}:
                 if not isinstance(value, str): error(path, "应为字符串", "type")
                 elif field.get("min_length") is not None and len(value) < field["min_length"]: error(path, f"长度不能小于 {field['min_length']}", "min_length")
                 elif field.get("max_length") is not None and len(value) > field["max_length"]: error(path, f"长度不能大于 {field['max_length']}", "max_length")
-            elif kind == "number":
+            elif kind in {"number", "integer", "time_point"}:
                 if not isinstance(value, (int, float)) or isinstance(value, bool): error(path, "应为数字", "type")
+                elif kind == "integer" and not isinstance(value, int): error(path, "应为整数", "type")
                 elif field.get("min") is not None and value < field["min"]: error(path, f"不能小于 {field['min']}", "minimum")
                 elif field.get("max") is not None and value > field["max"]: error(path, f"不能大于 {field['max']}", "maximum")
             elif kind == "boolean" and not isinstance(value, bool): error(path, "应为布尔值", "type")
@@ -54,6 +55,12 @@ def validate_record(schema: dict[str, Any], data: dict[str, Any]) -> list[dict[s
                 if not isinstance(value, list): error(path, "应为对象数组", "type")
                 else:
                     for index, item in enumerate(value): validate_fields(child_fields(field), item, f"{path}.{index}")
+            elif kind == "time_span":
+                if not isinstance(value, dict): error(path, "时间区间应为对象", "type")
+                else:
+                    start, end = value.get("start"), value.get("end")
+                    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)): error(path, "时间区间必须包含数字 start/end", "type")
+                    elif start < 0 or start >= end: error(path, "开始时间必须非负且小于结束时间", "time_span")
 
     validate_fields(schema.get("fields", []), data)
     for rule in schema.get("rules", []):
@@ -68,4 +75,3 @@ def validate_record(schema: dict[str, Any], data: dict[str, Any]) -> list[dict[s
             if left is not None and right is not None and left >= right:
                 error(rule["left"], rule.get("message", f"必须小于 {rule['right']}"), "relation")
     return errors
-

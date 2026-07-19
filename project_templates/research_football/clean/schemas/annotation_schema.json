@@ -1,0 +1,14 @@
+{
+  "schema_id": "football_cp_annotation",
+  "version": "1.1",
+  "primary_key": "sample_id",
+  "fields": [
+    {"key":"literal_content","label":"画面事实","type":"long_text","required":true},
+    {"key":"key_detail","label":"关键细节","type":"long_text","required":true},
+    {"key":"communicative_point","label":"传播点描述","type":"long_text","required":true},
+    {"key":"final_type","label":"最终类别","type":"enum","required":true,"options":[{"value":"contrast","label":"反差"},{"value":"controversy","label":"争议"},{"value":"skill","label":"技术表现"},{"value":"other","label":"其他"}]},
+    {"key":"annotation_confidence","label":"标注置信度","type":"number","min":0,"max":1},
+    {"key":"requires_dense_sampling","label":"需要高密度抽帧","type":"boolean"},
+    {"key":"requires_external_context","label":"需要外部语境","type":"boolean"}
+  ]
+}

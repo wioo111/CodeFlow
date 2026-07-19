@@ -1,0 +1,1 @@
+{"schema_id":"warehouse_annotation","version":"1.0","primary_key":"observation_id","fields":[{"key":"finding","label":"现场发现","type":"long_text","required":true},{"key":"severity","label":"严重程度","type":"enum","required":true,"options":[{"value":"low","label":"低"},{"value":"medium","label":"中"},{"value":"high","label":"高"}]},{"key":"action","label":"建议措施","type":"long_text"}]}

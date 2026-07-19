@@ -1,0 +1,3 @@
+{"asset_id":"A001","sample_id":"V001","asset_type":"video","video_path":"videos/v001.mp4","duration_seconds":8.0}
+{"asset_id":"A002","sample_id":"V002","asset_type":"video","video_path":"videos/v002.mp4","duration_seconds":8.0}
+{"asset_id":"A003","sample_id":"V001","asset_type":"cover","path":"frames/v001_1.png"}

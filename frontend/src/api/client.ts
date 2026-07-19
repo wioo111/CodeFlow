@@ -1,4 +1,4 @@
-import type { DataRecord, Project, ProjectSchema, ViewConfig } from '../types'
+import type { Assignment, CommentEvidence, DataRecord, DatasetVersion, FrameEvidence, PackageReport, Project, ProjectSchema, SampleDetail, SampleQueue, ViewConfig } from '../types'
 
 async function request<T>(path:string, init?:RequestInit):Promise<T>{
   const response=await fetch(`/api${path}`,init)
@@ -20,5 +20,15 @@ export const api={
   bulk:(batchId:number,payload:unknown)=>request<{updated:number}>(`/batches/${batchId}/records/bulk`,json('PATCH',payload)),
   validation:(batchId:number)=>request<{total:number;valid:number;invalid:number;records:{record_id:number;record_key:string;errors:{path:string;message:string;code:string}[]}[]}>(`/validation/batches/${batchId}`),
   exportUrl:(batchId:number,format:string,source='current',status='')=>`/api/exports/batches/${batchId}/${format}?source=${source}${status?`&review_status=${status}`:''}`,
+  preflightPackage:(data:FormData)=>request<PackageReport>('/dataset-packages/preflight',{method:'POST',body:data}),
+  importPackage:(data:FormData)=>request<{status:string;project_id:number;dataset_version_id:number;sample_count:number}>('/dataset-packages/import',{method:'POST',body:data}),
+  datasetVersions:(projectId:number)=>request<DatasetVersion[]>(`/projects/${projectId}/dataset-versions`),
+  researchSamples:(projectId:number,params:Record<string,string>={})=>request<SampleQueue>(`/projects/${projectId}/samples?${new URLSearchParams(params)}`),
+  sample:(sampleId:number,assignmentId:number)=>request<SampleDetail>(`/samples/${sampleId}?assignment_id=${assignmentId}`),
+  assignment:(id:number)=>request<Assignment>(`/assignments/${id}`),
+  frames:(sampleId:number,assignmentId:number)=>request<FrameEvidence[]>(`/samples/${sampleId}/frames?assignment_id=${assignmentId}`),
+  comments:(sampleId:number,assignmentId:number)=>request<CommentEvidence[]>(`/samples/${sampleId}/comments?assignment_id=${assignmentId}`),
+  saveDraft:(id:number,payload:unknown)=>request<{status:string;locked:boolean;validation_errors:{path:string;message:string}[];saved_at:string}>(`/assignments/${id}/draft`,json('PATCH',payload)),
+  submitAssignment:(id:number,payload:unknown)=>request<{status:string;locked:boolean;submitted_at:string}>(`/assignments/${id}/submit`,json('POST',payload)),
+  researchExport:async(projectId:number)=>{const response=await fetch('/api/exports',json('POST',{project_id:projectId,anonymize_coders:false}));if(!response.ok)throw new Error('导出失败');return response.blob()},
 }
-

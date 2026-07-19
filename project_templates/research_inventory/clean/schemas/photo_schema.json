@@ -1,0 +1,1 @@
+{"type":"object","required":["photo_id","observation_id","path"],"properties":{"photo_id":{"type":"string"},"observation_id":{"type":"string"},"time_seconds":{"type":"number"},"path":{"type":"string"}}}

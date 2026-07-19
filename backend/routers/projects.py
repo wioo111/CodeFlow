@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Batch, Project, Record
+from backend.models import Batch, DatasetVersion, Project, Record
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -19,6 +19,7 @@ def project_summary(project: Project, db: Session) -> dict:
         ).join(Batch, Record.batch_id == Batch.id, isouter=True).where(Batch.project_id == project.id)
     ).one()
     latest_batch = db.scalar(select(Batch).where(Batch.project_id == project.id).order_by(Batch.id.desc()).limit(1))
+    latest_dataset = db.scalar(select(DatasetVersion).where(DatasetVersion.project_id == project.id).order_by(DatasetVersion.id.desc()).limit(1))
     return {
         "id": project.id, "name": project.name, "description": project.description,
         "schema_id": project.schema_id, "schema_version": project.schema_version,
@@ -26,6 +27,9 @@ def project_summary(project: Project, db: Session) -> dict:
         "record_count": total or 0, "invalid_count": invalid or 0, "approved_count": approved or 0,
         "needs_review_count": needs_review or 0, "latest_batch_id": latest_batch.id if latest_batch else None,
         "latest_batch_name": latest_batch.name if latest_batch else None,
+        "latest_dataset_version_id": latest_dataset.id if latest_dataset else None,
+        "latest_dataset_version": latest_dataset.dataset_version if latest_dataset else None,
+        "research_sample_count": latest_dataset.sample_count if latest_dataset else 0,
     }
 
 
