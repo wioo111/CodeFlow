@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -45,15 +46,43 @@ def _visibility(assignment: AnnotationAssignment, key: str) -> bool:
     return bool((assignment.evidence_config or {}).get(key, False))
 
 
+def _pop_path(data: dict[str, Any], path: str) -> None:
+    parts = path.split(".")
+    current: Any = data
+    for part in parts[:-1]:
+        if not isinstance(current, dict):
+            return
+        current = current.get(part)
+    if isinstance(current, dict):
+        current.pop(parts[-1], None)
+
+
+def sample_duration(sample: DataRecord | dict[str, Any]) -> float | None:
+    data = sample.clean_data if isinstance(sample, DataRecord) else sample
+    candidates = [
+        data.get("duration_seconds"), data.get("video_duration"), data.get("duration"),
+        (data.get("platform_metadata") or {}).get("duration_seconds") if isinstance(data.get("platform_metadata"), dict) else None,
+        ((data.get("platform_metadata") or {}).get("duration_sources") or {}).get("local_video")
+        if isinstance((data.get("platform_metadata") or {}).get("duration_sources"), dict) else None,
+    ]
+    for value in candidates:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
 def _redact_sample(data: dict[str, Any], assignment: AnnotationAssignment, dataset: DatasetVersion) -> dict[str, Any]:
-    result = dict(data)
+    result = copy.deepcopy(data)
     mapping = dataset.project_config.get("visibility_fields", {}) if isinstance(dataset.project_config, dict) else {}
     if not _visibility(assignment, "title"):
-        for key in mapping.get("title", ["title", "caption", "description", "video_title"]):
-            result.pop(key, None)
+        for key in mapping.get("title", ["title", "caption", "description", "video_title", "platform_metadata.title"]):
+            _pop_path(result, key)
     if not _visibility(assignment, "metadata"):
-        for key in mapping.get("metadata", ["account", "author", "published_at", "like_count", "comment_count", "share_count", "metrics"]):
-            result.pop(key, None)
+        for key in mapping.get("metadata", ["account", "author", "published_at", "like_count", "comment_count", "share_count", "metrics", "platform_metadata", "source"]):
+            _pop_path(result, key)
+    duration = sample_duration(data)
+    if duration is not None:
+        result["duration_seconds"] = duration
     return result
 
 
@@ -143,7 +172,13 @@ def sample_comments(
     if not _visibility(assignment, "comments"):
         raise HTTPException(403, "该实验组未授权访问评论")
     rows = _related(db, sample, "comments")
-    return sorted([row.clean_data for row in rows], key=lambda row: row.get("rank_by_like", 10**9))
+    normalized = []
+    for record in rows:
+        row = copy.deepcopy(record.clean_data)
+        row.setdefault("comment_id", record.record_key)
+        row.setdefault("comment_type", row.get("comment_kind", "unknown"))
+        normalized.append(row)
+    return sorted(normalized, key=lambda row: row.get("rank_by_like", 10**9))
 
 
 @router.get("/samples/{sample_record_id}/frames")
@@ -157,7 +192,13 @@ def sample_frames(
     if not _visibility(assignment, "frames"):
         raise HTTPException(403, "该实验组未授权访问抽帧")
     rows = _related(db, sample, "frames")
-    return sorted([row.clean_data for row in rows], key=lambda row: float(row.get("time_seconds", 0)))
+    normalized = []
+    for record in rows:
+        row = copy.deepcopy(record.clean_data)
+        row.setdefault("frame_id", record.record_key)
+        row.setdefault("path", row.get("relative_path") or row.get("frame_path"))
+        normalized.append(row)
+    return sorted(normalized, key=lambda row: float(row.get("time_seconds", 0)))
 
 
 @router.get("/samples/{sample_record_id}/frames/{frame_id}/media")
@@ -173,7 +214,7 @@ def frame_media(
     if not frame: raise HTTPException(404, "抽帧不存在")
     dataset = db.get(DatasetVersion, sample.dataset_version_id)
     if not dataset.media_root: raise HTTPException(404, "项目尚未绑定媒体根目录")
-    relative = frame.clean_data.get("path") or frame.clean_data.get("frame_path")
+    relative = frame.clean_data.get("path") or frame.clean_data.get("frame_path") or frame.clean_data.get("relative_path")
     root = Path(dataset.media_root).resolve(); target = (root / Path(str(relative).replace("/", os.sep))).resolve()
     if root != target and root not in target.parents: raise HTTPException(403, "媒体路径超出项目授权目录")
     if not target.is_file(): raise HTTPException(404, "抽帧文件不存在")
@@ -184,7 +225,14 @@ def _media_path(db: Session, sample: DataRecord, asset_id: str | None, kind: str
     dataset = db.get(DatasetVersion, sample.dataset_version_id)
     if not dataset.media_root:
         raise HTTPException(404, "项目尚未绑定媒体根目录")
-    candidates = [sample.clean_data] + [row.clean_data for row in _related(db, sample, "assets")]
+    candidates = [sample.clean_data]
+    for record in _related(db, sample, "assets"):
+        row = record.clean_data
+        nested = row.get("assets") if isinstance(row, dict) else None
+        if isinstance(nested, list):
+            candidates.extend(item for item in nested if isinstance(item, dict))
+        elif isinstance(row, dict):
+            candidates.append(row)
     selected: dict[str, Any] | None = None
     if asset_id:
         selected = next((row for row in candidates if str(row.get("asset_id") or row.get("id")) == asset_id), None)

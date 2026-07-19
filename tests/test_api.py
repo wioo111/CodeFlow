@@ -155,6 +155,86 @@ def research_package(name: str, replacements: dict[str, bytes] | None = None) ->
     return output.getvalue()
 
 
+def current_football_shape_package(project_id: str) -> bytes:
+    manifest = {
+        "project_id": project_id,
+        "name": "Current football package shape",
+        "dataset_version": "current-shape-v1",
+        "primary_table": "samples",
+        "primary_key": "sample_id",
+        "annotation_schemas": {
+            "ai_raw": "schemas/codex_annotation_schema.json",
+            "human_review": "schemas/review_schema.json",
+        },
+        "tables": [
+            {"name": "samples", "file": "samples.jsonl", "schema": "schemas/sample_schema.json", "primary_key": "sample_id"},
+            {"name": "comments", "file": "comments.jsonl", "schema": "schemas/comment_schema.json", "foreign_key": "sample_id"},
+            {"name": "frames", "file": "frames.jsonl", "schema": "schemas/frame_schema.json", "foreign_key": "sample_id"},
+            {"name": "assets", "file": "assets.jsonl", "schema": "schemas/asset_schema.json", "foreign_key": "sample_id"},
+        ],
+    }
+    ai_schema = {
+        "schema_id": "football_ai_v1", "version": "1", "primary_key": "sample_id",
+        "fields": [
+            {"key": "sample_id", "label": "Sample", "type": "string", "required": True},
+            {"key": "ai_raw_annotation", "label": "AI", "type": "object", "properties": [
+                {"key": "literal_content", "label": "Literal", "type": "long_text", "required": True},
+                {"key": "key_detail", "label": "Detail", "type": "long_text"},
+                {"key": "communicative_point", "label": "Point", "type": "long_text"},
+                {"key": "evidence_span", "label": "Span", "type": "object", "properties": [
+                    {"key": "start", "label": "Start", "type": "number"},
+                    {"key": "end", "label": "End", "type": "number"},
+                ]},
+                {"key": "provisional_open_codes", "label": "Codes", "type": "string_array"},
+                {"key": "suggested_type", "label": "Type", "type": "string"},
+                {"key": "alternative_type", "label": "Alternative", "type": "string"},
+                {"key": "uncertainty", "label": "Uncertainty", "type": "string"},
+            ]},
+        ],
+    }
+    review_schema = {
+        "schema_id": "football_review_v1", "version": "1", "primary_key": "sample_id",
+        "fields": [
+            {"key": "sample_id", "label": "Sample", "type": "string", "required": True},
+            {"key": "human_validated_annotation", "label": "Review", "type": "object", "properties": [
+                {"key": "literal_content", "label": "Literal", "type": "long_text", "required": True},
+                {"key": "key_detail", "label": "Detail", "type": "long_text", "required": True},
+                {"key": "communicative_point", "label": "Point", "type": "long_text", "required": True},
+                {"key": "evidence_span", "label": "Span", "type": "object", "properties": []},
+                {"key": "final_type", "label": "Type", "type": "enum", "required": True,
+                 "options": [{"value": "P1", "label": "P1"}, {"value": "P0", "label": "P0"}]},
+                {"key": "annotation_confidence", "label": "Confidence", "type": "number", "min": 0, "max": 1},
+            ]},
+            {"key": "field_decisions", "label": "Decisions", "type": "object"},
+        ],
+    }
+    rows = {
+        "samples.jsonl": [{
+            "sample_id": "VID-001", "aweme_id": "7659",
+            "platform_metadata": {"duration_seconds": 15.766, "title": "must stay hidden", "metrics": {"like_count": 99}},
+            "source": {"account": "must stay hidden", "original_url": "https://example.invalid/video"},
+            "media": {"video_path": "B500-000001/video.mp4"},
+        }],
+        "comments.jsonl": [{"sample_id": "VID-001", "comment_id": "C1", "comment_kind": "text", "text": "comment", "rank_by_like": 1}],
+        "frames.jsonl": [{"sample_id": "VID-001", "frame_index": 1, "time_seconds": 0.1, "relative_path": "B500-000001/frames/frame_0001.jpg", "exists": True}],
+        "assets.jsonl": [{"sample_id": "VID-001", "assets": [
+            {"asset_type": "frame", "relative_path": "B500-000001/frames/frame_0001.jpg", "exists": True},
+            {"asset_type": "video", "relative_path": "B500-000001/video.mp4", "exists": True},
+        ]}],
+    }
+    schemas = {name: {"schema_id": name, "version": "1", "fields": []} for name in ("sample_schema", "comment_schema", "frame_schema", "asset_schema")}
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("clean/codeflow_project.json", json.dumps(manifest))
+        archive.writestr("clean/schemas/codex_annotation_schema.json", json.dumps(ai_schema))
+        archive.writestr("clean/schemas/review_schema.json", json.dumps(review_schema))
+        for name, schema in schemas.items():
+            archive.writestr(f"clean/schemas/{name}.json", json.dumps(schema))
+        for filename, values in rows.items():
+            archive.writestr(f"clean/{filename}", "\n".join(json.dumps(value) for value in values) + "\n")
+    return output.getvalue()
+
+
 @pytest.fixture(scope="module")
 def research_import(client: TestClient):
     content = research_package("research_football")
@@ -228,6 +308,75 @@ def test_video_range_frames_comments_and_server_side_visibility(client: TestClie
     assert video.status_code == 206 and len(video.content) == 100 and video.headers["accept-ranges"] == "bytes"
     other = client.get(f"/api/assignments/{assignment_id}", headers={"X-User-ID": "coder_02"})
     assert other.status_code == 403
+
+
+def test_current_250_package_shape_supports_nested_media_schemas_duration_and_blinding(client: TestClient, tmp_path: Path):
+    media_root = tmp_path / "media"
+    frame_path = media_root / "B500-000001" / "frames" / "frame_0001.jpg"
+    video_path = media_root / "B500-000001" / "video.mp4"
+    frame_path.parent.mkdir(parents=True)
+    frame_path.write_bytes(b"jpeg-frame")
+    video_path.write_bytes(bytes(range(256)))
+    content = current_football_shape_package("current_football_shape")
+    files = {"package_file": ("current-shape.zip", content, "application/zip")}
+
+    preflight = client.post("/api/dataset-packages/preflight", data={"media_root": str(media_root)}, files=files)
+    assert preflight.status_code == 200 and preflight.json()["valid"], preflight.text
+    imported = client.post("/api/dataset-packages/import", data={"media_root": str(media_root)}, files=files)
+    assert imported.status_code == 201, imported.text
+    project_id = imported.json()["project_id"]
+    queue_item = client.get(f"/api/projects/{project_id}/samples").json()["items"][0]
+    assignment_id = queue_item["assignment_id"]
+    sample_record_id = queue_item["sample_record_id"]
+
+    detail = client.get(f"/api/assignments/{assignment_id}").json()
+    field_keys = {field["key"] for field in detail["annotation_schema"]["fields"]}
+    assert {"literal_content", "key_detail", "communicative_point", "final_type"}.issubset(field_keys)
+    assert "sample_id" not in field_keys and "evidence_span" not in field_keys and "notes" not in field_keys
+    comments = client.get(f"/api/samples/{sample_record_id}/comments?assignment_id={assignment_id}").json()
+    assert comments[0]["comment_type"] == "text"
+    frames = client.get(f"/api/samples/{sample_record_id}/frames?assignment_id={assignment_id}").json()
+    assert frames[0]["frame_id"] and frames[0]["path"].endswith("frame_0001.jpg")
+    frame = client.get(f"/api/samples/{sample_record_id}/frames/{frames[0]['frame_id']}/media?assignment_id={assignment_id}")
+    assert frame.status_code == 200 and frame.content == b"jpeg-frame"
+    video = client.get(f"/api/samples/{sample_record_id}/media/video?assignment_id={assignment_id}", headers={"Range": "bytes=0-9"})
+    assert video.status_code == 206 and video.content == bytes(range(10))
+
+    human = {"literal_content": "visible action", "key_detail": "key moment", "communicative_point": "shareable point", "final_type": "P1"}
+    invalid_span = client.patch(f"/api/assignments/{assignment_id}/draft", json={
+        "annotation": human, "field_decisions": {}, "evidence_spans": [{"start": 1, "end": 999, "primary": True}],
+    })
+    assert invalid_span.status_code == 200
+    assert any(error["code"] == "duration" for error in invalid_span.json()["validation_errors"])
+
+    ai_output = {
+        "literal_content": "visible action", "key_detail": "key moment", "communicative_point": "shareable point",
+        "evidence_span": {"start": 1.0, "end": 2.0}, "provisional_open_codes": ["skill"],
+        "suggested_type": "P1", "alternative_type": "", "uncertainty": "",
+    }
+    model = client.post("/api/model-runs/import", json={
+        "project_id": project_id, "name": "shape-regression", "model_version": "test-model", "prompt_version": "test-prompt",
+        "annotations": [{"sample_id": "VID-001", "annotation": ai_output}],
+    })
+    assert model.status_code == 201, model.text
+    assert client.get(f"/api/assignments/{assignment_id}").json()["ai_raw_annotation"]["raw_output"] == ai_output
+    repaired = client.post("/api/dataset-packages/import", data={"media_root": str(media_root)}, files=files)
+    assert repaired.status_code == 200
+    assert repaired.json()["metadata_repaired"] is True and repaired.json()["ai_annotations_revalidated"] == 1
+    assert not client.get(f"/api/assignments/{assignment_id}").json()["ai_raw_annotation"]["validation_errors"]
+
+    manager = {"X-User-ID": "manager", "X-User-Role": "research_manager"}
+    created = client.post(f"/api/projects/{project_id}/assignments", headers=manager, json={
+        "dataset_version_id": imported.json()["dataset_version_id"], "sample_ids": ["VID-001"], "coder_ids": ["blind_current"],
+        "stage": "blind_control", "experiment_group": "video-only", "blind": True,
+        "evidence_config": {"video": True, "frames": False, "title": False, "comments": False, "metadata": False, "ai_suggestion": False},
+    })
+    assert created.status_code == 201
+    blind_assignment = created.json()["created"][0]
+    blind_headers = {"X-User-ID": "blind_current", "X-User-Role": "coder"}
+    sample = client.get(f"/api/samples/{sample_record_id}?assignment_id={blind_assignment}", headers=blind_headers).json()["data"]
+    assert sample["duration_seconds"] == pytest.approx(15.766)
+    assert "platform_metadata" not in sample and "source" not in sample and "title" not in sample
 
 
 def test_ai_raw_human_draft_span_validation_submit_lock_and_isolation(client: TestClient, research_import):

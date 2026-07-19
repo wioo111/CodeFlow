@@ -16,7 +16,7 @@ from backend.models import (
     AIRawAnnotation, Adjudication, AnnotationAssignment, DataRecord, DatasetVersion,
     GoldAnnotation, HumanAnnotation, ModelRun, Project, ResearchChangeLog,
 )
-from backend.routers.research import MANAGER_ROLES, assignment_for, current_identity
+from backend.routers.research import MANAGER_ROLES, assignment_for, current_identity, sample_duration
 from backend.services.diff_service import differences
 from backend.services.schema_validator import validate_record
 
@@ -91,11 +91,7 @@ def _span_errors(spans: list[dict[str, Any]], duration: float | None) -> list[di
 
 
 def _duration(sample: DataRecord) -> float | None:
-    for key in ("duration_seconds", "video_duration", "duration"):
-        value = sample.clean_data.get(key)
-        if isinstance(value, (int, float)):
-            return float(value)
-    return None
+    return sample_duration(sample)
 
 
 def _assignment_view(db: Session, assignment: AnnotationAssignment, identity: tuple[str, str]) -> dict[str, Any]:
@@ -201,7 +197,9 @@ def _save_draft(db: Session, assignment: AnnotationAssignment, payload: DraftUpd
     if invalid_decisions: raise HTTPException(422, f"不支持的字段决策：{', '.join(invalid_decisions)}")
     sample = db.get(DataRecord, assignment.sample_record_id)
     project = db.get(Project, assignment.project_id)
-    errors = validate_record(project.schema_data, payload.annotation) + _span_errors(payload.evidence_spans, _duration(sample))
+    dataset = db.get(DatasetVersion, assignment.dataset_version_id)
+    annotation_schema = dataset.schemas.get("__resolved_annotation_schema__", project.schema_data)
+    errors = validate_record(annotation_schema, payload.annotation) + _span_errors(payload.evidence_spans, _duration(sample))
     for change in differences(human.current_data or {}, payload.annotation):
         db.add(ResearchChangeLog(
             assignment_id=assignment.id, operator=assignment.coder_id, stage=assignment.stage,
@@ -295,7 +293,9 @@ def import_model_run(payload: ModelRunImport, db: Session = Depends(get_db)):
         ).project_config["primary_table"]), None)
         if not sample:
             db.rollback(); raise HTTPException(422, f"AI 结果引用不存在样本：{sample_id}")
-        validation_errors = validate_record(project.schema_data, output)
+        dataset = db.get(DatasetVersion, sample.dataset_version_id)
+        ai_schema = dataset.schemas.get("__resolved_ai_schema__") or dataset.schemas.get("__ai_raw_schema__") or project.schema_data
+        validation_errors = validate_record(ai_schema, output)
         db.add(AIRawAnnotation(
             sample_record_id=sample.id, model_run_id=run.id, raw_output=copy.deepcopy(output),
             parse_status="invalid" if validation_errors else "valid", validation_errors=validation_errors,

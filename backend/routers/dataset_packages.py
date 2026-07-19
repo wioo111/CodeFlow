@@ -9,17 +9,36 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import AnnotationAssignment, DataRecord, DataTable, DatasetVersion, HumanAnnotation, Project
+from backend.models import AIRawAnnotation, AnnotationAssignment, DataRecord, DataTable, DatasetVersion, HumanAnnotation, Project
 from backend.services.package_service import ParsedPackage, parse_dataset_package
+from backend.services.schema_validator import validate_record
 
 
 router = APIRouter(prefix="/dataset-packages", tags=["dataset packages"])
 
 
+def _unwrap_schema(schema: dict[str, Any], container_key: str, excluded: set[str] | None = None) -> dict[str, Any]:
+    excluded = excluded or set()
+    container = next((field for field in schema.get("fields", []) if field.get("key") == container_key), None)
+    if not container or container.get("type") != "object":
+        return schema
+    fields = container.get("properties") or container.get("fields") or []
+    if isinstance(fields, dict):
+        fields = [{"key": key, **value} for key, value in fields.items()]
+    return {
+        "schema_id": f"{schema.get('schema_id', container_key)}.{container_key}",
+        "version": str(schema.get("version", "v1")),
+        "primary_key": schema.get("primary_key", "sample_id"),
+        "fields": [copy.deepcopy(field) for field in fields if field.get("key") not in excluded],
+        "rules": copy.deepcopy(schema.get("rules", [])),
+        "relations": copy.deepcopy(schema.get("relations", [])),
+    }
+
+
 def _custom_schema(parsed: ParsedPackage) -> dict[str, Any]:
     schema = parsed.schemas.get("__annotation_schema__") or parsed.schemas.get("__review_schema__")
     if schema and "fields" in schema:
-        return schema
+        return _unwrap_schema(schema, "human_validated_annotation", {"evidence_span"})
     if schema and schema.get("type") == "object":
         required = set(schema.get("required", []))
         fields = []
@@ -61,6 +80,34 @@ def _default_view(schema: dict[str, Any], parsed: ParsedPackage) -> dict[str, An
     }
 
 
+def _resolved_schemas(parsed: ParsedPackage, annotation_schema: dict[str, Any]) -> dict[str, Any]:
+    stored = copy.deepcopy(parsed.schemas)
+    stored["__resolved_annotation_schema__"] = copy.deepcopy(annotation_schema)
+    ai_schema = parsed.schemas.get("__ai_raw_schema__")
+    if ai_schema:
+        stored["__resolved_ai_schema__"] = _unwrap_schema(ai_schema, "ai_raw_annotation")
+    return stored
+
+
+def _repair_existing_dataset(existing: DatasetVersion, parsed: ParsedPackage, annotation_schema: dict[str, Any], db: Session) -> int:
+    stored_schemas = _resolved_schemas(parsed, annotation_schema)
+    existing.schemas = stored_schemas
+    existing.project_config = copy.deepcopy(parsed.manifest)
+    existing.view_config = copy.deepcopy(parsed.view)
+    existing.codebook = copy.deepcopy(parsed.codebook)
+    ai_schema = stored_schemas.get("__resolved_ai_schema__")
+    if not ai_schema:
+        return 0
+    annotations = db.scalars(select(AIRawAnnotation).join(
+        DataRecord, DataRecord.id == AIRawAnnotation.sample_record_id,
+    ).where(DataRecord.dataset_version_id == existing.id)).all()
+    for annotation in annotations:
+        errors = validate_record(ai_schema, annotation.raw_output)
+        annotation.validation_errors = errors
+        annotation.parse_status = "invalid" if errors else "valid"
+    return len(annotations)
+
+
 @router.post("/preflight")
 async def preflight_package(
     package_file: UploadFile = File(...), media_root: str | None = Form(None), db: Session = Depends(get_db),
@@ -99,9 +146,12 @@ async def import_package(
         DatasetVersion.package_digest == parsed.digest,
     ))
     if existing:
+        revalidated = _repair_existing_dataset(existing, parsed, annotation_schema, db)
+        db.commit()
         return JSONResponse(status_code=200, content={
             "status": "already_exists", "project_id": project.id, "dataset_version_id": existing.id,
             "dataset_version": existing.dataset_version, "digest": existing.package_digest,
+            "metadata_repaired": True, "ai_annotations_revalidated": revalidated,
         })
     versions = copy.deepcopy(parsed.manifest.get("versions", {}))
     versions.setdefault("dataset_version", parsed.dataset_version)
@@ -110,8 +160,7 @@ async def import_package(
     versions.setdefault("view_version", str(parsed.view.get("version", "v1")))
     versions.setdefault("codebook_version", str(parsed.codebook.get("version", "v1")))
     versions.setdefault("prompt_version", "not_applicable")
-    stored_schemas = copy.deepcopy(parsed.schemas)
-    stored_schemas["__resolved_annotation_schema__"] = copy.deepcopy(annotation_schema)
+    stored_schemas = _resolved_schemas(parsed, annotation_schema)
     dataset = DatasetVersion(
         project_id=project.id, external_project_id=external_id, dataset_version=parsed.dataset_version,
         package_digest=parsed.digest, source_filename=package_file.filename or "dataset.zip",

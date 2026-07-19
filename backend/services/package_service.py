@@ -227,6 +227,32 @@ def parse_dataset_package(content: bytes, filename: str, media_root: str | None 
         elif isinstance(reference, dict):
             schemas[f"__{config_key}__"] = reference
 
+    annotation_schemas = manifest.get("annotation_schemas")
+    if annotation_schemas is not None and not isinstance(annotation_schemas, dict):
+        errors.append({"file": manifest_name, "line": None, "field": "annotation_schemas", "message": "annotation_schemas 必须是对象"})
+    elif isinstance(annotation_schemas, dict):
+        for schema_role, reference in annotation_schemas.items():
+            if not isinstance(reference, (str, dict)):
+                errors.append({"file": manifest_name, "line": None, "field": f"annotation_schemas.{schema_role}", "message": "Schema 引用必须是相对路径或对象"})
+                continue
+            if isinstance(reference, str):
+                resolved = locate(reference)
+                if resolved not in files:
+                    errors.append({"file": resolved, "line": None, "field": f"annotation_schemas.{schema_role}", "message": "配置 Schema 不存在"})
+                    continue
+                schema = _json(files[resolved], resolved)
+            else:
+                schema = reference
+            unsupported = sorted(_schema_types(schema) - SUPPORTED_TYPES)
+            if unsupported:
+                errors.append({"file": str(reference) if isinstance(reference, str) else manifest_name, "line": None,
+                               "field": f"annotation_schemas.{schema_role}", "message": f"不支持的字段类型：{', '.join(unsupported)}"})
+            schemas[f"__{schema_role}_schema__"] = schema
+            if schema_role in {"human_review", "review"}:
+                schemas["__review_schema__"] = schema
+            elif schema_role in {"ai_raw", "ai"}:
+                schemas["__ai_raw_schema__"] = schema
+
     media_path: str | None = None
     if media_root:
         root = Path(media_root).expanduser().resolve()
