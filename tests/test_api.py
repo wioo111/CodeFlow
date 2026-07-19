@@ -85,3 +85,29 @@ def test_next_task_and_exports(client: TestClient):
     csv_rows = list(csv.DictReader(io.StringIO(csv_response.text.lstrip("\ufeff"))))
     assert len(csv_rows) == 1
     assert json.loads(csv_rows[0]["annotation_data"])["communicative_type"] == "P1"
+
+
+def test_all_ten_tasks_can_be_completed_continuously(client: TestClient):
+    for assignment_id in range(2, 11):
+        annotation = valid_annotation()
+        annotation["literal_content"] = f"样本 {assignment_id} 的客观描述"
+        response = client.post(
+            f"/api/annotations/{assignment_id}/submit",
+            json={"annotation_data": annotation, "duration_seconds": assignment_id * 5},
+        )
+        assert response.status_code == 200
+
+    assert client.get("/api/tasks/next?project_id=1").json() is None
+    project = client.get("/api/projects/1").json()
+    assert project["completed"] == project["total"] == 10
+
+    jsonl_rows = [
+        json.loads(line)
+        for line in client.get("/api/exports/1/jsonl").text.strip().splitlines()
+    ]
+    csv_rows = list(
+        csv.DictReader(
+            io.StringIO(client.get("/api/exports/1/csv").text.lstrip("\ufeff"))
+        )
+    )
+    assert len(jsonl_rows) == len(csv_rows) == 10
