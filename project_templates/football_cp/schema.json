@@ -1,0 +1,24 @@
+{
+  "schema_id": "football_cp_v0.1",
+  "version": "0.1",
+  "primary_key": "sample_id",
+  "fields": [
+    {"key":"sample_id","label":"样本编号","type":"string","required":true,"readonly":true},
+    {"key":"literal_content","label":"客观内容","type":"long_text","required":true,"min_length":5},
+    {"key":"key_detail","label":"关键细节","type":"long_text","required":true},
+    {"key":"communicative_point","label":"传播点","type":"long_text","required":true},
+    {"key":"communicative_type","label":"传播点类型","type":"enum","required":true,"options":[
+      {"value":"P1","label":"竞技结果与关键高光"},{"value":"P2","label":"技术过程与运动美感"},{"value":"P3","label":"异常失误与幽默反差"},{"value":"P4","label":"规则冲突与体育精神"},{"value":"P5","label":"个体情绪与群体反应"},{"value":"P6","label":"人物身份与关系叙事"},{"value":"P7","label":"历史背景与纪念叙事"},{"value":"P0","label":"现有类别无法覆盖"},{"value":"PX","label":"主次类型无法确定"}
+    ]},
+    {"key":"secondary_types","label":"次要类型","type":"multi_enum","options":[{"value":"P1","label":"P1"},{"value":"P2","label":"P2"},{"value":"P3","label":"P3"},{"value":"P4","label":"P4"},{"value":"P5","label":"P5"},{"value":"P6","label":"P6"},{"value":"P7","label":"P7"}]},
+    {"key":"evidence_span","label":"证据区间","type":"object","required":true,"properties":[{"key":"start","label":"开始时间","type":"number","required":true,"min":0},{"key":"end","label":"结束时间","type":"number","required":true,"min":0}]},
+    {"key":"evidence_tags","label":"证据标签","type":"string_array"},
+    {"key":"actors","label":"人物信息","type":"object_array","items":{"properties":[{"key":"name","label":"名称","type":"string","required":true},{"key":"role","label":"角色","type":"string"}]}},
+    {"key":"typical_misreading","label":"典型误读","type":"long_text"},
+    {"key":"new_type_note","label":"新类型说明","type":"long_text","required_when":{"field":"communicative_type","equals":"P0"}},
+    {"key":"conflicting_types","label":"冲突类型","type":"string_array","required_when":{"field":"communicative_type","equals":"PX"}},
+    {"key":"confidence","label":"置信度","type":"number","required":true,"min":0,"max":1},
+    {"key":"contains_sensitive_content","label":"包含敏感画面","type":"boolean"}
+  ],
+  "relations":[{"type":"less_than","left":"evidence_span.start","right":"evidence_span.end","message":"证据开始时间必须小于结束时间"}]
+}

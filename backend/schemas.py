@@ -1,31 +1,28 @@
-from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class ProjectCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    description: str = ""
-    schema_data: dict[str, Any]
-    codebook_version: str = "v0.1"
+from pydantic import BaseModel, Field
 
 
-class AnnotationPayload(BaseModel):
-    annotation_data: dict[str, Any]
-    duration_seconds: int = Field(default=0, ge=0)
+ReviewStatus = Literal["unreviewed", "in_progress", "approved", "rejected", "needs_review"]
 
 
-class ProjectOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class RecordUpdate(BaseModel):
+    current_data: dict[str, Any]
+    operator: str = Field(default="local_reviewer", min_length=1, max_length=120)
+    review_status: ReviewStatus | None = None
+    review_note: str | None = None
 
-    id: int
-    name: str
-    description: str
-    schema_version: str
-    codebook_version: str
-    status: str
-    created_at: datetime
-    total: int = 0
-    completed: int = 0
+
+class ReviewUpdate(BaseModel):
+    status: ReviewStatus
+    operator: str = Field(default="local_reviewer", min_length=1, max_length=120)
+    note: str = ""
+
+
+class BulkUpdate(BaseModel):
+    record_ids: list[int] = Field(min_length=1)
+    field_path: str | None = None
+    value: Any = None
+    review_status: ReviewStatus | None = None
+    operator: str = "local_reviewer"
 

@@ -1,0 +1,8 @@
+import { Alert, Button, Card, Col, List, Row, Statistic, Tag, Typography } from 'antd'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api } from '../api/client'
+
+type Report=Awaited<ReturnType<typeof api.validation>>
+export function ValidationPage(){const {projectId}=useParams();const [query]=useSearchParams();const batchId=Number(query.get('batch'));const [report,setReport]=useState<Report|null>(null);const navigate=useNavigate();useEffect(()=>{api.validation(batchId).then(setReport)},[batchId]);if(!report)return <main className="page">正在生成校验报告…</main>;return <main className="page"><header className="page-title"><div><span className="eyebrow">Schema validation</span><Typography.Title>数据错误列表</Typography.Title></div><Button onClick={()=>navigate(`/project/${projectId}/table?batch=${batchId}`)}>返回工作区</Button></header><Row gutter={16}><Col span={8}><Card><Statistic title="总记录" value={report.total}/></Card></Col><Col span={8}><Card><Statistic title="校验通过" value={report.valid} valueStyle={{color:'#389e0d'}}/></Card></Col><Col span={8}><Card><Statistic title="存在错误" value={report.invalid} valueStyle={{color:'#cf1322'}}/></Card></Col></Row>{report.invalid===0?<Alert style={{marginTop:20}} type="success" showIcon message="全部记录通过 Schema 校验"/>:<List className="validation-list" dataSource={report.records} renderItem={(item)=><Card title={item.record_key} extra={<Button type="link" onClick={()=>navigate(`/project/${projectId}/record/${item.record_id}`)}>打开记录</Button>}>{item.errors.map((error)=><p key={`${error.path}-${error.code}`}><Tag color="red">{error.path}</Tag>{error.message} <Tag>{error.code}</Tag></p>)}</Card>}/>}</main>}
+

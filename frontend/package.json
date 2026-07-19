@@ -11,11 +11,15 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
+    "antd": "latest",
     "vite": "latest",
     "typescript": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
+    "lucide-react": "latest",
+    "react-hook-form": "latest",
+    "react-router-dom": "latest",
+    "zustand": "latest"
   },
   "devDependencies": {
     "@eslint/js": "latest",

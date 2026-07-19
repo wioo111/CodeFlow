@@ -1,0 +1,1 @@
+{"default_view":"table","table":{"columns":["sku","product_name","category","stock","warehouse.zone","_review.status"]},"form":{"sections":[{"title":"商品信息","fields":["sku","product_name","category","stock","tags","active"]},{"title":"仓储位置","fields":["warehouse"]}]}}

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -16,64 +16,76 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
+    schema_id: Mapped[str] = mapped_column(String(120), index=True)
     schema_version: Mapped[str] = mapped_column(String(80))
-    codebook_version: Mapped[str] = mapped_column(String(80), default="v0.1")
-    status: Mapped[str] = mapped_column(String(30), default="active")
     schema_data: Mapped[dict] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class Material(Base):
-    __tablename__ = "materials"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    material_type: Mapped[str] = mapped_column(String(40))
-    material_data: Mapped[dict] = mapped_column(JSON)
-    metadata_data: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class Coder(Base):
-    __tablename__ = "coders"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120))
-    role: Mapped[str] = mapped_column(String(30), default="coder")
-    status: Mapped[str] = mapped_column(String(30), default="active")
-
-
-class Assignment(Base):
-    __tablename__ = "assignments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
-    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"), index=True)
-    coder_id: Mapped[int] = mapped_column(ForeignKey("coders.id"), index=True)
-    stage: Mapped[str] = mapped_column(String(30), default="coding")
-    status: Mapped[str] = mapped_column(String(30), default="pending")
-    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
-
-    material: Mapped[Material] = relationship()
-    coder: Mapped[Coder] = relationship()
-    annotation: Mapped["Annotation | None"] = relationship(back_populates="assignment", uselist=False)
-
-    __table_args__ = (UniqueConstraint("material_id", "coder_id", "stage"),)
-
-
-class Annotation(Base):
-    __tablename__ = "annotations"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    assignment_id: Mapped[int] = mapped_column(ForeignKey("assignments.id"), unique=True, index=True)
-    schema_version: Mapped[str] = mapped_column(String(80))
-    codebook_version: Mapped[str] = mapped_column(String(80))
-    annotation_data: Mapped[dict] = mapped_column(JSON, default=dict)
-    is_submitted: Mapped[bool] = mapped_column(Boolean, default=False)
+    view_config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    assignment: Mapped[Assignment] = relationship(back_populates="annotation")
+    batches: Mapped[list["Batch"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+
+
+class Batch(Base):
+    __tablename__ = "batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    data_version: Mapped[str] = mapped_column(String(80), default="v1")
+    source_filename: Mapped[str] = mapped_column(String(260))
+    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    project: Mapped[Project] = relationship(back_populates="batches")
+    records: Mapped[list["Record"]] = relationship(back_populates="batch", cascade="all, delete-orphan")
+
+
+class Record(Base):
+    __tablename__ = "records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("batches.id"), index=True)
+    record_key: Mapped[str] = mapped_column(String(240), index=True)
+    original_data: Mapped[dict] = mapped_column(JSON)
+    current_data: Mapped[dict] = mapped_column(JSON)
+    validation_status: Mapped[str] = mapped_column(String(30), default="valid", index=True)
+    validation_errors: Mapped[list] = mapped_column(JSON, default=list)
+    review_status: Mapped[str] = mapped_column(String(30), default="unreviewed", index=True)
+    reviewer: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    batch: Mapped[Batch] = relationship(back_populates="records")
+    change_logs: Mapped[list["ChangeLog"]] = relationship(back_populates="record", cascade="all, delete-orphan")
+
+    __table_args__ = (UniqueConstraint("batch_id", "record_key"),)
+
+
+class ChangeLog(Base):
+    __tablename__ = "change_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_id: Mapped[int] = mapped_column(ForeignKey("records.id"), index=True)
+    field_path: Mapped[str] = mapped_column(String(300))
+    old_value: Mapped[object] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[object] = mapped_column(JSON, nullable=True)
+    operator: Mapped[str] = mapped_column(String(120), default="local_reviewer")
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    record: Mapped[Record] = relationship(back_populates="change_logs")
+
+
+class Export(Base):
+    __tablename__ = "exports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("batches.id"), index=True)
+    format: Mapped[str] = mapped_column(String(20))
+    filter_condition: Mapped[dict] = mapped_column(JSON, default=dict)
+    file_path: Mapped[str] = mapped_column(String(260), default="download")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

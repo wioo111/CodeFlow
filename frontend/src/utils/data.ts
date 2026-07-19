@@ -1,0 +1,7 @@
+import type { SchemaField } from '../types'
+
+export function getPath(data:Record<string,unknown>,path:string):unknown{return path.split('.').reduce<unknown>((value,key)=>value&&typeof value==='object'?(value as Record<string,unknown>)[key]:undefined,data)}
+export function setPath(data:Record<string,unknown>,path:string,value:unknown){const copy=structuredClone(data);const parts=path.split('.');let current=copy;parts.slice(0,-1).forEach((part)=>{if(!current[part]||typeof current[part]!=='object')current[part]={};current=current[part] as Record<string,unknown>});current[parts.at(-1)!]=value;return copy}
+export function childFields(field:SchemaField):SchemaField[]{const source=field.properties??field.fields??field.items?.properties??[];if(Array.isArray(source))return source;return Object.entries(source).map(([key,value])=>({key,...value} as SchemaField))}
+export function fieldMap(fields:SchemaField[],prefix=''):Record<string,SchemaField>{return fields.reduce((all,field)=>{const path=prefix?`${prefix}.${field.key}`:field.key;all[path]=field;if(field.type==='object'||field.type==='object_array')Object.assign(all,fieldMap(childFields(field),path));return all},{} as Record<string,SchemaField>)}
+export function displayValue(value:unknown){if(value===null||value===undefined||value==='')return '—';if(typeof value==='boolean')return value?'是':'否';if(typeof value==='object')return JSON.stringify(value,undefined,2);return String(value)}

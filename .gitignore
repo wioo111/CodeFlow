@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 backend/codeflow.db
+backend/codeflow_review.db
 data/
 exports/
 frontend/node_modules/

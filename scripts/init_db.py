@@ -1,10 +1,4 @@
-from backend.database import Base, SessionLocal, engine
-from backend.services.seed import seed_database
-
-
+from backend.database import Base, engine
 if __name__ == "__main__":
     Base.metadata.create_all(bind=engine)
-    with SessionLocal() as session:
-        seed_database(session)
-    print("CodeFlow 数据库已初始化。")
-
+    print("CodeFlow 审校数据库已初始化。请通过导入页面添加 Schema 和数据。")

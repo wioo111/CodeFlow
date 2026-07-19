@@ -1,0 +1,10 @@
+import { Alert, Button, Card, Col, Empty, Progress, Row, Statistic, Typography } from 'antd'
+import { Database, FileUp, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api } from '../api/client'
+import type { Project } from '../types'
+
+export function ProjectListPage(){const [projects,setProjects]=useState<Project[]>([]);const [error,setError]=useState('');const navigate=useNavigate();useEffect(()=>{api.projects().then(setProjects).catch((e)=>setError(e.message))},[]);return <main className="page"><header className="hero compact"><div><span className="eyebrow">AI structured output review</span><h1>把机器输出，<br/><em>变成可信数据。</em></h1></div><Button type="primary" size="large" icon={<FileUp size={17}/>} onClick={()=>navigate('/project/import')}>导入新项目</Button></header>{error&&<Alert type="error" message={error}/>} {!projects.length&&!error?<Empty description="尚无项目"><Button type="primary" onClick={()=>navigate('/project/import')}>导入 Schema 与数据</Button></Empty>:<Row gutter={[20,20]}>{projects.map((project)=><Col span={12} key={project.id}><Card className="project-card-v2" hoverable onClick={()=>navigate(`/project/${project.id}`)}><div className="card-top"><TagLine text={`${project.schema_id} · v${project.schema_version}`}/><span>{project.latest_batch_name}</span></div><Typography.Title level={3}>{project.name}</Typography.Title><Typography.Paragraph type="secondary">{project.description||'暂无项目说明'}</Typography.Paragraph><Row gutter={16}><Col span={8}><Statistic title="记录" value={project.record_count} prefix={<Database size={16}/>}/></Col><Col span={8}><Statistic title="已通过" value={project.approved_count} prefix={<ShieldCheck size={16}/>}/></Col><Col span={8}><Statistic title="校验错误" value={project.invalid_count} valueStyle={{color:project.invalid_count?'#d46b08':undefined}}/></Col></Row><Progress percent={project.record_count?Math.round(project.approved_count/project.record_count*100):0} strokeColor="#b7e43a" trailColor="#e8e9e2"/></Card></Col>)}</Row>}</main>}
+function TagLine({text}:{text:string}){return <span className="schema-tag">{text}</span>}
+

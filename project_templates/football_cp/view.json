@@ -1,0 +1,9 @@
+{
+  "default_view":"table",
+  "table":{"columns":["sample_id","communicative_point","communicative_type","confidence","_review.status"]},
+  "form":{"sections":[
+    {"title":"视频内容理解","fields":["sample_id","literal_content","key_detail","communicative_point"]},
+    {"title":"分类与证据","fields":["communicative_type","secondary_types","evidence_span","evidence_tags","actors","typical_misreading","confidence"]},
+    {"title":"条件补充","description":"P0 与 PX 会触发条件必填规则。","fields":["new_type_note","conflicting_types","contains_sensitive_content"]}
+  ]}
+}
