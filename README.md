@@ -65,6 +65,14 @@ docker compose up --build
 
 足球演示包包含两个 8 秒本地 MP4 和三张抽帧图，用于验证真实 Range 播放与时间跳转。它不是目标研究的 250 条真实清洗数据。
 
+可复现的 250 条规模包：
+
+```powershell
+.venv\Scripts\python scripts\generate_scale_fixture.py
+```
+
+该夹具包含 250 个样本、5000 条评论、750 张抽帧、250 个资产和 3 名标注员，用来验证容量、关联和分页；它同样不冒充真实研究数据。
+
 ## 验证
 
 ```powershell
@@ -79,6 +87,7 @@ npm run build
 
 ```powershell
 node scripts/e2e_research.mjs
+node scripts/e2e_scale_queue.mjs
 ```
 
 详细协议与工作流见：

@@ -87,10 +87,13 @@ def project_samples(
     ).where(DataRecord.dataset_version_id == dataset.id, DataRecord.table_name == primary)
     if role not in MANAGER_ROLES:
         query = query.where(AnnotationAssignment.coder_id == user)
-    if status:
-        query = query.where(AnnotationAssignment.status == status)
     query = query.order_by(DataRecord.record_key.desc() if sort_order == "desc" else DataRecord.record_key)
     rows = db.execute(query).all()
+    status_counts: dict[str, int] = {}
+    for _, assignment in rows:
+        status_counts[assignment.status] = status_counts.get(assignment.status, 0) + 1
+    if status:
+        rows = [(record, assignment) for record, assignment in rows if assignment.status == status]
     total = len(rows)
     rows = rows[(page - 1) * page_size: page * page_size]
     return {"items": [{
@@ -99,7 +102,8 @@ def project_samples(
         "stage": assignment.stage, "experiment_group": assignment.experiment_group,
         "blind": assignment.blind, "status": assignment.status,
         "sample": _redact_sample(record.clean_data, assignment, dataset),
-    } for record, assignment in rows], "page": page, "page_size": page_size, "total": total}
+    } for record, assignment in rows], "page": page, "page_size": page_size, "total": total,
+        "status_counts": status_counts}
 
 
 def _related(db: Session, sample: DataRecord, table_name: str) -> list[DataRecord]:

@@ -136,6 +136,7 @@ async def import_package(
             )
             db.add(table); db.flush()
             pk = table.primary_key
+            pending_records: list[DataRecord] = []
             for index, row in enumerate(rows, 1):
                 key = row.get(pk) if pk else row.get("id") or row.get(f"{name.rstrip('s')}_id") or f"{name}:{index}"
                 sample_key = row.get(table.foreign_key) if table.foreign_key else (row.get(primary_key) if name == primary_table else None)
@@ -144,9 +145,10 @@ async def import_package(
                     record_key=str(key), sample_key=str(sample_key) if sample_key is not None else None,
                     clean_data=copy.deepcopy(row),
                 )
-                db.add(record); db.flush()
-                if name == primary_table:
-                    sample_records[str(key)] = record
+                pending_records.append(record)
+            db.add_all(pending_records); db.flush()
+            if name == primary_table:
+                sample_records.update({record.record_key: record for record in pending_records})
         workflow = parsed.manifest.get("workflow", {}) if isinstance(parsed.manifest.get("workflow"), dict) else {}
         coders = workflow.get("default_coders") or ["local_reviewer"]
         stage = str(workflow.get("default_stage", "pilot_independent_review"))

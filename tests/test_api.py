@@ -2,10 +2,13 @@ import csv
 import io
 import json
 import os
+import time
 import zipfile
 from pathlib import Path
 
 import pytest
+
+from scripts.generate_scale_fixture import build_scale_package
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -321,3 +324,27 @@ def test_new_dataset_version_does_not_overwrite_old_and_manager_can_create_blind
     sample = client.get(f"/api/samples/{detail['sample_record_id']}?assignment_id={assignment_id}", headers=blind_headers).json()
     assert detail["ai_raw_annotation"] is None and "title" not in sample["data"] and "account" not in sample["data"]
     assert client.get(f"/api/samples/{detail['sample_record_id']}/comments?assignment_id={assignment_id}", headers=blind_headers).status_code == 403
+
+
+def test_250_sample_multitable_scale_import_and_pagination(client: TestClient):
+    content = build_scale_package(sample_count=250, comments_per_sample=20, frames_per_sample=3)
+    files = {"package_file": ("scale-250.zip", content, "application/zip")}
+    started = time.perf_counter()
+    preflight = client.post("/api/dataset-packages/preflight", files=files)
+    assert preflight.status_code == 200 and preflight.json()["valid"], preflight.text
+    assert preflight.json()["tables"] == {"samples": 250, "comments": 5000, "frames": 750, "assets": 250}
+    imported = client.post("/api/dataset-packages/import", files=files)
+    elapsed = time.perf_counter() - started
+    assert imported.status_code == 201, imported.text
+    assert elapsed < 30, f"250 条规模包预检与导入耗时 {elapsed:.2f}s"
+    project_id = imported.json()["project_id"]
+    headers = {"X-User-ID": "scale_coder_01", "X-User-Role": "coder"}
+    first_page = client.get(f"/api/projects/{project_id}/samples?page=1&page_size=100", headers=headers).json()
+    third_page = client.get(f"/api/projects/{project_id}/samples?page=3&page_size=100", headers=headers).json()
+    assert first_page["total"] == 250 and first_page["status_counts"] == {"pending": 250}
+    assert len(first_page["items"]) == 100 and len(third_page["items"]) == 50
+    first = first_page["items"][0]
+    comments = client.get(f"/api/samples/{first['sample_record_id']}/comments?assignment_id={first['assignment_id']}", headers=headers).json()
+    frames = client.get(f"/api/samples/{first['sample_record_id']}/frames?assignment_id={first['assignment_id']}", headers=headers).json()
+    assert len(comments) == 20 and [row["rank_by_like"] for row in comments] == list(range(1, 21))
+    assert len(frames) == 3 and [row["time_seconds"] for row in frames] == [10.0, 20.0, 30.0]

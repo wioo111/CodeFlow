@@ -16,7 +16,7 @@ export type DataRecord = { id:number; batch_id:number; record_key:string; curren
 
 export type DatasetVersion = { id:number; dataset_version:string; digest:string; source_filename:string; sample_count:number; versions:Record<string,string>; frozen:boolean; created_at:string }
 export type ResearchSample = { sample_record_id:number; sample_id:string; assignment_id:number; coder_id:string; stage:string; experiment_group:string; blind:boolean; status:string; sample:Record<string,unknown> }
-export type SampleQueue = { items:ResearchSample[]; page:number; page_size:number; total:number }
+export type SampleQueue = { items:ResearchSample[]; page:number; page_size:number; total:number;status_counts:Record<string,number> }
 export type EvidenceSpan = { start?:number; end?:number; primary?:boolean; unlocatable?:boolean }
 export type ResearchChangeLog = { id:number; field_path:string; old_value:unknown; new_value:unknown; change_type:string; operator:string; stage:string; reason:string; versions:Record<string,string>; changed_at:string }
 export type Assignment = {

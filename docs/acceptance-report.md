@@ -18,9 +18,10 @@
 | 字段级日志 | 通过 | 表单及时间区间追加式 change log |
 | 版本化导出 | 通过 | 11 文件 ZIP、摘要、版本和外键标识 |
 | 非足球多表验证 | 通过 | warehouse_observation 数据包 |
+| 250 条规模与分页 | 通过 | 250 samples、5000 comments、750 frames、250 assets、3 coders；真实服务预检 0.99 秒、导入 2.68 秒；浏览器队列 1.26 秒加载、25 行分页、零控制台错误 |
 | 250 条真实清洗数据 | **等待输入包** | 已搜索授权工作区与附件，未找到该数据包；演示数据不能冒充真实研究数据 |
 
-自动化结果：后端 19 项通过；前端 lint 与组件测试通过；生产构建通过；隔离浏览器端到端通过且控制台错误、失败请求均为 0。
+自动化结果：后端 20 项通过；前端 lint 与组件测试通过；生产构建通过；隔离浏览器端到端通过且控制台错误、失败请求均为 0。
 
 浏览器证据位于当前任务的可视化目录：`codeflow-package-preflight.png`、`codeflow-research-queue.png`、`codeflow-research-workbench.png`、`codeflow-research-restored.png`。
 
