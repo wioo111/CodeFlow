@@ -1,0 +1,1 @@
+{"type":"object","required":["comment_id","sample_id"],"properties":{"comment_id":{"type":"string"},"sample_id":{"type":"string"},"text":{"type":"string"},"like_count":{"type":"integer"},"rank_by_like":{"type":"integer"},"comment_type":{"type":"string","enum":["text","image","video","sticker","mixed","empty","unknown"]}}}

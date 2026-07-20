@@ -3,37 +3,33 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.database import Base, SessionLocal, engine
-from backend.routers import annotations, exports, projects, results, tasks
-from backend.services.seed import seed_database
+from backend.database import Base, engine
+from backend.routers import dataset_packages, exports, imports, projects, records, research, validation, workflow
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        seed_database(db)
     yield
 
 
-app = FastAPI(title="CodeFlow API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="CodeFlow Review API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
 
 @app.get("/api/health")
-def health():
-    return {"status": "ok"}
+def health(): return {"status": "ok", "product": "CodeFlow Review"}
 
 
 app.include_router(projects.router, prefix="/api")
-app.include_router(tasks.router, prefix="/api")
-app.include_router(annotations.router, prefix="/api")
-app.include_router(results.router, prefix="/api")
+app.include_router(imports.router, prefix="/api")
+app.include_router(records.router, prefix="/api")
+app.include_router(validation.router, prefix="/api")
 app.include_router(exports.router, prefix="/api")
-
+app.include_router(dataset_packages.router, prefix="/api")
+app.include_router(research.router, prefix="/api")
+app.include_router(workflow.router, prefix="/api")

@@ -1,0 +1,1 @@
+{"version":"1.0","workspace":{"left":"queue","center":["video","frames"],"right":["ai","form","codebook"],"drawer":["comments","metadata","changes"]},"form":{"sections":[{"title":"内容理解","fields":["literal_content","key_detail","communicative_point"]},{"title":"分类与质量","fields":["final_type","annotation_confidence","requires_dense_sampling","requires_external_context"]}]}}

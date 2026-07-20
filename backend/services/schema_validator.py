@@ -1,45 +1,77 @@
 from typing import Any
 
-from fastapi import HTTPException
+from .schema_parser import child_fields, get_path
 
 
-SUPPORTED_TYPES = {"short_text", "long_text", "single_select", "multi_select", "boolean", "number", "scale"}
+def _empty(value: Any) -> bool:
+    return value is None or value == "" or value == []
 
 
-def validate_schema(schema: dict[str, Any]) -> None:
-    if not schema.get("version") or not isinstance(schema.get("fields"), list):
-        raise HTTPException(422, "Schema 必须包含 version 和 fields")
-    seen: set[str] = set()
-    for field in schema["fields"]:
-        field_id = field.get("id")
-        if not field_id or field_id in seen:
-            raise HTTPException(422, "Schema 字段 id 不能为空或重复")
-        seen.add(field_id)
-        if field.get("type") not in SUPPORTED_TYPES:
-            raise HTTPException(422, f"不支持的字段类型：{field.get('type')}")
+def validate_record(schema: dict[str, Any], data: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
 
+    def error(path: str, message: str, code: str):
+        errors.append({"path": path, "message": message, "code": code})
 
-def validate_annotation(schema: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
-    normalized: dict[str, Any] = {}
-    for field in schema["fields"]:
-        field_id = field["id"]
-        value = data.get(field_id)
-        empty = value is None or value == "" or value == []
-        if field.get("required") and empty:
-            raise HTTPException(422, f"“{field.get('label', field_id)}”为必填项")
-        if empty:
-            normalized[field_id] = None if value != [] else []
-            continue
-        field_type = field["type"]
-        options = {item["value"] for item in field.get("options", [])}
-        if field_type == "single_select" and value not in options:
-            raise HTTPException(422, f"字段 {field_id} 的选项无效")
-        if field_type == "multi_select" and (not isinstance(value, list) or not set(value).issubset(options)):
-            raise HTTPException(422, f"字段 {field_id} 的选项无效")
-        if field_type == "boolean" and not isinstance(value, bool):
-            raise HTTPException(422, f"字段 {field_id} 必须为布尔值")
-        if field_type in {"number", "scale"} and (not isinstance(value, (int, float)) or isinstance(value, bool)):
-            raise HTTPException(422, f"字段 {field_id} 必须为数字")
-        normalized[field_id] = value
-    return normalized
+    def validate_fields(fields: list[dict[str, Any]], container: Any, prefix: str = ""):
+        if not isinstance(container, dict):
+            error(prefix or "$", "应为对象", "type")
+            return
+        for field in fields:
+            key = field["key"]
+            path = f"{prefix}.{key}" if prefix else key
+            value = container.get(key)
+            required_when = field.get("required_when")
+            required = bool(field.get("required"))
+            if required_when:
+                expected = required_when.get("equals", required_when.get("value"))
+                required = required or get_path(data, required_when.get("field", "")) == expected
+            if required and _empty(value):
+                error(path, "必填字段不能为空", "required")
+                continue
+            if _empty(value):
+                continue
+            kind = field["type"]
+            if kind in {"string", "long_text", "asset_reference", "record_reference", "computed_readonly"}:
+                if not isinstance(value, str): error(path, "应为字符串", "type")
+                elif field.get("min_length") is not None and len(value) < field["min_length"]: error(path, f"长度不能小于 {field['min_length']}", "min_length")
+                elif field.get("max_length") is not None and len(value) > field["max_length"]: error(path, f"长度不能大于 {field['max_length']}", "max_length")
+            elif kind in {"number", "integer", "time_point"}:
+                if not isinstance(value, (int, float)) or isinstance(value, bool): error(path, "应为数字", "type")
+                elif kind == "integer" and not isinstance(value, int): error(path, "应为整数", "type")
+                elif field.get("min") is not None and value < field["min"]: error(path, f"不能小于 {field['min']}", "minimum")
+                elif field.get("max") is not None and value > field["max"]: error(path, f"不能大于 {field['max']}", "maximum")
+            elif kind == "boolean" and not isinstance(value, bool): error(path, "应为布尔值", "type")
+            elif kind == "enum":
+                allowed = {option["value"] for option in field.get("options", [])}
+                if value not in allowed: error(path, "不在允许的枚举选项中", "enum")
+            elif kind == "multi_enum":
+                allowed = {option["value"] for option in field.get("options", [])}
+                if not isinstance(value, list): error(path, "应为数组", "type")
+                elif not set(value).issubset(allowed): error(path, "包含无效的枚举选项", "enum")
+            elif kind == "string_array" and (not isinstance(value, list) or not all(isinstance(item, str) for item in value)): error(path, "应为字符串数组", "type")
+            elif kind == "object": validate_fields(child_fields(field), value, path)
+            elif kind == "object_array":
+                if not isinstance(value, list): error(path, "应为对象数组", "type")
+                else:
+                    for index, item in enumerate(value): validate_fields(child_fields(field), item, f"{path}.{index}")
+            elif kind == "time_span":
+                if not isinstance(value, dict): error(path, "时间区间应为对象", "type")
+                else:
+                    start, end = value.get("start"), value.get("end")
+                    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)): error(path, "时间区间必须包含数字 start/end", "type")
+                    elif start < 0 or start >= end: error(path, "开始时间必须非负且小于结束时间", "time_span")
 
+    validate_fields(schema.get("fields", []), data)
+    for rule in schema.get("rules", []):
+        condition = rule.get("if", {})
+        if get_path(data, condition.get("field", "")) == condition.get("equals"):
+            for path in rule.get("then_required", []):
+                if _empty(get_path(data, path)):
+                    error(path, rule.get("message", "满足条件时此字段必填"), "conditional_required")
+    for rule in schema.get("relations", []):
+        if rule.get("type") == "less_than":
+            left, right = get_path(data, rule["left"]), get_path(data, rule["right"])
+            if left is not None and right is not None and left >= right:
+                error(rule["left"], rule.get("message", f"必须小于 {rule['right']}"), "relation")
+    return errors

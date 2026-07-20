@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["sample_id","duration_seconds"],"properties":{"sample_id":{"type":"string"},"title":{"type":"string"},"duration_seconds":{"type":"number","minimum":0},"split":{"type":"string"},"technical_qc":{"type":"string"},"account":{"type":"string"},"like_count":{"type":"integer","minimum":0}}}

@@ -5,6 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     volumes:
       - codeflow-data:/app/data
+      - ${CODEFLOW_MEDIA_ROOT:-./project_templates/research_football/media}:/media:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -23,4 +24,3 @@ services:
     restart: unless-stopped
 volumes:
   codeflow-data:
-

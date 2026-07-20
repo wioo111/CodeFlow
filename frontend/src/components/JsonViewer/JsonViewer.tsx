@@ -1,0 +1,5 @@
+import { Button, Card, Col, Row, Typography } from 'antd'
+import type { DataRecord } from '../../types'
+
+export function JsonViewer({record}:{record:DataRecord}){const copy=()=>navigator.clipboard.writeText(JSON.stringify(record.current_data,null,2));const download=()=>{const blob=new Blob([JSON.stringify(record.current_data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${record.record_key}.json`;a.click();URL.revokeObjectURL(a.href)};return <Row gutter={16}><Col span={12}><Card title="导入时原始数据"><pre className="json-code">{JSON.stringify(record.original_data,null,2)}</pre></Card></Col><Col span={12}><Card title="当前数据" extra={<><Button type="link" onClick={copy}>复制</Button><Button type="link" onClick={download}>下载</Button></>}><pre className="json-code current">{JSON.stringify(record.current_data,null,2)}</pre></Card></Col><Col span={24}><Typography.Text type="secondary">原始数据只读且永不覆盖；当前数据包含全部人工编辑。</Typography.Text></Col></Row>}
+

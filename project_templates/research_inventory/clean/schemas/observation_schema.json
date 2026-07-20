@@ -1,0 +1,1 @@
+{"type":"object","required":["observation_id","zone"],"properties":{"observation_id":{"type":"string"},"zone":{"type":"string"},"severity_hint":{"type":"string"},"duration_seconds":{"type":"number"}}}
