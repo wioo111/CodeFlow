@@ -52,6 +52,12 @@ if(await page.locator('.comment-panel button').count())throw new Error('Comment 
 for(const comment of await page.locator('.comment-panel .comment-text').all()){
   if(!(await comment.isVisible()))throw new Error('A comment body is hidden')
 }
+const aiFields=page.locator('.ai-result-card .ai-readonly-field')
+await aiFields.first().waitFor()
+const visibleAIFields=await aiFields.count()
+if(visibleAIFields<4)throw new Error(`Expected schema-driven AI fields, found ${visibleAIFields}`)
+if(await page.locator('.ai-result-card pre').count())throw new Error('AI annotation must not be rendered as raw JSON')
+if(!await page.locator('.ai-result-card').getByText('画面事实',{exact:true}).isVisible())throw new Error('AI field label is not visible')
 await page.waitForFunction(()=>{const video=document.querySelector('video');return video&&video.readyState>=1})
 await page.locator('video').evaluate(async video=>{await video.play();await new Promise(resolve=>setTimeout(resolve,900));video.pause()})
 const playedTime=await page.locator('video').evaluate(video=>video.currentTime)
@@ -77,5 +83,5 @@ const restoredSpans=await page.locator('.span-editor').count()
 if(restoredSpans<1)throw new Error('Saved evidence span was not restored after reload')
 await page.screenshot({path:`${artifactRoot}/codeflow-research-restored.png`,fullPage:true})
 
-console.log(JSON.stringify({projectUrl,visibleComments,playedTime,frameTime,restoredSpans,consoleErrors,failedRequests},null,2))
+console.log(JSON.stringify({projectUrl,visibleComments,visibleAIFields,playedTime,frameTime,restoredSpans,consoleErrors,failedRequests},null,2))
 await browser.close()

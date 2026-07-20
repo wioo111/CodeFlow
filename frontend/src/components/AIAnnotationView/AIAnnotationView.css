@@ -1,0 +1,85 @@
+.ai-result-card > .ant-card-body > .ant-tag {
+  margin-bottom: 14px;
+}
+
+.ai-annotation-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ai-readonly-section {
+  border-top: 1px solid #e2e5de;
+  padding-top: 12px;
+}
+
+.ai-section-title {
+  margin-bottom: 12px;
+  color: #24342b;
+  font-weight: 700;
+}
+
+.ai-field-list,
+.ai-readonly-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-field-list {
+  gap: 12px;
+}
+
+.ai-readonly-field {
+  gap: 6px;
+}
+
+.ai-readonly-field > label {
+  color: #46534c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ai-readonly-value {
+  min-height: 38px;
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+  color: #1f2d25;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  background: #f7f8f5;
+  border: 1px solid #d9ddd5;
+  border-radius: 6px;
+}
+
+.ai-value-long_text {
+  min-height: 68px;
+}
+
+.ai-readonly-value .ant-tag {
+  margin: 0;
+}
+
+.ai-empty {
+  color: #9aa39d;
+}
+
+.ai-object-value {
+  display: grid;
+  gap: 5px;
+}
+
+.ai-object-value > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-object-value span {
+  color: #768078;
+  font-size: 12px;
+}
+
+.ai-object-list {
+  display: grid;
+  gap: 10px;
+}
