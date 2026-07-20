@@ -28,5 +28,5 @@ export type Assignment = {
 }
 export type SampleDetail = { sample_record_id:number;sample_id:string;dataset_version_id:number;project_id:number;data:Record<string,unknown>;assignment_id:number;evidence_config:Record<string,boolean>;versions:Record<string,string> }
 export type FrameEvidence = { frame_id:string;sample_id:string;time_seconds:number;frame_set:string;path:string }
-export type CommentEvidence = { comment_id:string;sample_id:string;text:string;like_count:number;rank_by_like:number;comment_type:string }
+export type CommentEvidence = { comment_id:string;sample_id:string;text:string;like_count:number;rank_by_like:number;comment_type:string;reply_count?:number;created_at?:string }
 export type PackageReport = {valid:boolean;errors:{file?:string;line?:number;table?:string;field?:string;message:string}[];warnings:{message:string}[];project_id:string;dataset_version:string;digest:string;tables:Record<string,number>;sample_count:number;media_root_bound:boolean;duplicate:boolean}
